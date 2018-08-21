@@ -17,7 +17,11 @@
   },
   "homepage": "https://github.com/bbonnin/saagie-cli#readme",
   "dependencies": {
+    "axios": "^0.18.0",
     "lodash": "^4.17.10",
     "vorpal": "^1.12.0"
+  },
+  "bin": {
+    "saagie": "./saagie-cli.js"
   }
 }
