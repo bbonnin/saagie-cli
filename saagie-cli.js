@@ -13,34 +13,35 @@ if (!fs.existsSync(cliHome)) {
     fs.mkdirSync(cliHome)
 }
 
-let config = { platforms: [] };
+let config = { datafabrics: [] };
 
 if (fs.existsSync(cliHome + '/config.json')) {
     const content = fs.readFileSync(cliHome + '/config.json');
-    config = JSON.parse(content);
+    config = _.merge(config, JSON.parse(content));
+
 }
 
 // - commands
 
 vorpal
-    .command('platforms <action> [parameters...]')
-    .alias('pf')
+    .command('datafabrics <action> [parameters...]')
+    .alias('df')
     .autocomplete(['list', 'add', 'remove'])
-    .action(processPf);
+    .action(processDf);
 
-function processPf(args, callback) {
+function processDf(args, callback) {
     if (args.action === 'list') {
-        if (config.platforms.length > 0) {
-            config.platforms.forEach(p => this.log(chalk.bold(p.name) + ' (' + p.url + ')'));
+        if (config.datafabrics.length > 0) {
+            config.datafabrics.forEach(f => this.log(chalk.bold(f.name) + ' (' + f.url + ')'));
         }
         else {
-            this.log(chalk.red('No platforms'));
+            this.log(chalk.red('No datafabrics'));
         }
     }
     else if (args.action === 'add') {
         if (args.parameters.length === 2) {
             const pf = { name: args.parameters[0], url: args.parameters[1] };
-            config.platforms.push(pf);
+            config.datafabrics.push(pf);
             saveConfig();
         }
         else {
@@ -49,7 +50,7 @@ function processPf(args, callback) {
     }
     else if (args.action === 'remove') {
         if (args.parameters.length === 1) {
-            _.remove(config.platforms, p => p.name === args.parameters[0]);
+            _.remove(config.datafabrics, f => f.name === args.parameters[0]);
             saveConfig();
         }
         else {
