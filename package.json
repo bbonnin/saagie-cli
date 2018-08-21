@@ -1,0 +1,23 @@
+{
+  "name": "saagie-cli",
+  "version": "1.0.0",
+  "description": "CLI tool for Saagie Open DataFabric",
+  "main": "saagie-cli.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bbonnin/saagie-cli.git"
+  },
+  "author": "Bruno Bonnin",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/bbonnin/saagie-cli/issues"
+  },
+  "homepage": "https://github.com/bbonnin/saagie-cli#readme",
+  "dependencies": {
+    "lodash": "^4.17.10",
+    "vorpal": "^1.12.0"
+  }
+}
