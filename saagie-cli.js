@@ -3,31 +3,16 @@
 const vorpal = require('vorpal')();
 const fs = require('fs');
 const chalk = require('chalk');
+const prettyjson = require('prettyjson');
 const axios = require('axios');
 const _ = require('lodash');
 
 
-// Initialisation
+// ----------------
+// Global variables
+// ----------------
 
-// - configuration env
-let cliHome = process.env.HOME || process.env.HOMEPATH || process.env.USERPROFILE;
-cliHome += '/.saagie-cli';
-
-if (!fs.existsSync(cliHome)) {
-    fs.mkdirSync(cliHome)
-}
-
-let config = { datafabrics: [] };
-
-if (fs.existsSync(cliHome + '/config.json')) {
-    const content = fs.readFileSync(cliHome + '/config.json');
-    config = _.merge(config, JSON.parse(content));
-
-}
-
-let activeFabric = undefined;
-let fabricAuth = undefined;
-let activePlatform = undefined;
+const context = {};
 
 const usernamePrompt = {
     name: 'username',
@@ -41,41 +26,81 @@ const passwordPrompt = {
     message: 'Datafabric password? '
 };
 
+const cliHome = (process.env.HOME || process.env.HOMEPATH || process.env.USERPROFILE) + '/.saagie-cli';
 
-// - commands
+
+// --------------
+// Initialisation
+// --------------
+
+if (!fs.existsSync(cliHome)) {
+    fs.mkdirSync(cliHome)
+}
+
+let config = { datafabrics: [] };
+
+if (fs.existsSync(cliHome + '/config.json')) {
+    const content = fs.readFileSync(cliHome + '/config.json');
+    config = _.merge(config, JSON.parse(content));
+
+}
+
+
+// --------------------------
+// VORPAL commands definition
+// --------------------------
 
 vorpal
-    .command('datafabrics <action> [parameters...]')
-    .alias('df')
+    .command('datafabric <action> [parameters...]')
+    .alias('d')
     .autocomplete(['list', 'add', 'remove', 'connect'])
-    .action(processDf);
+    .action(processDatafabrics);
 
 vorpal
-    .command('platforms <action> [parameters...]')
-    .alias('pf')
+    .command('platform <action> [parameters...]')
+    .alias('p')
     .autocomplete(['list', 'connect'])
-    .action(processPf);
+    .action(processPlatforms);
 
-// Functions
+vorpal
+    .command('job <action> [parameters...]')
+    .alias('j')
+    .autocomplete(['list', 'info'])
+    .action(processJobs);
 
-function processPf(args, callback) {
+vorpal
+  .command('grep [filter] [words...]')
+  .hidden()
+  .action(function (args, callback) {
+    if (chalk.reset(args.stdin).indexOf(args.filter) != -1) {
+        this.log(chalk.reset(args.stdin));
+    }
+    callback();
+  });
+
+
+// ------------------
+// Processing actions
+// ------------------
+
+function processJobs(args, callback) {
     let invokeCB = true;
     args = _.merge({ parameters: [] }, args);
 
-    if (args.action === 'list') {
-        invokeCB = false;
-        getPlatformList(fabricAuth)
-            .then(err => {
-                callback();
-            });
+    if (!context.platform) {
+        this.log(chalk.red('ERROR! You are not connected to a platform'));
     }
-    else if (args.action === 'connect') {
+    else if (args.action === 'list') {
+        invokeCB = false;
+        getJobList(callback, this);
+    }
+    else if (args.action === 'info') {
         if (args.parameters.length === 1) {
-
-            // NEXT STEP IS HERE !!!!!!!!
+            invokeCB = false;
+            getJobInfo(args.parameters[0], callback, this);
         }
         else {
-            this.log(chalk.red('ERROR! Usage: pf connect <id>'));
+            this.log(chalk.red('ERROR! Usage: job info <id>'));
         }
     }
 
@@ -84,7 +109,40 @@ function processPf(args, callback) {
     }
 }
 
-function processDf(args, callback) {
+function processPlatforms(args, callback) {
+    let invokeCB = true;
+    args = _.merge({ parameters: [] }, args);
+
+    if (!context.fabric) {
+        this.log(chalk.red('ERROR! You are not connected to a data fabric'));
+    }
+    else if (args.action === 'list') {
+        invokeCB = false;
+        getPlatformList(context.auth, callback, this);
+    }
+    else if (args.action === 'connect') {
+        if (args.parameters.length === 1) {
+            const pf = _.findLast(context.platforms, pf => pf.id == args.parameters[0]);
+
+            if (pf) {
+                context.platform = pf;
+                vorpal.delimiter(context.fabric.name + ' | ' + context.platform.name + ' >');
+            }
+            else {
+                this.log(chalk.red('ERROR! Unknown platform'));
+            }
+        }
+        else {
+            this.log(chalk.red('ERROR! Usage: platform connect <id>'));
+        }
+    }
+
+    if (invokeCB) {
+        callback();
+    }
+}
+
+function processDatafabrics(args, callback) {
     let invokeCB = true;
     args = _.merge({ parameters: [] }, args);
 
@@ -93,7 +151,7 @@ function processDf(args, callback) {
             config.datafabrics.forEach(f => this.log(chalk.bold(f.name) + ' (' + f.url + ')'));
         }
         else {
-            this.log(chalk.red('No datafabrics'));
+            this.log(chalk.red('No data fabrics'));
         }
     }
     else if (args.action === 'add') {
@@ -103,7 +161,7 @@ function processDf(args, callback) {
             saveConfig();
         }
         else {
-            this.log(chalk.red('ERROR! Usage: df add <name> <url>'));
+            this.log(chalk.red('ERROR! Usage: datafabric add <name> <url>'));
         }
     }
     else if (args.action === 'remove') {
@@ -112,33 +170,23 @@ function processDf(args, callback) {
             saveConfig();
         }
         else {
-            this.log(chalk.red('ERROR! Usage: df remove <name>'));
+            this.log(chalk.red('ERROR! Usage: datafabric remove <name>'));
         }
     }
     else if (args.action === 'connect') {
         if (args.parameters.length === 1) {
             const idxDf = _.findIndex(config.datafabrics, df => df.name === args.parameters[0]);
             if (idxDf === -1) {
-                this.log(chalk.red('ERROR! Unknown datafabric'));
+                this.log(chalk.red('ERROR! Unknown data fabric'));
             }
             else {
-                activeFabric = config.datafabrics[idxDf];
+                context.fabric = config.datafabrics[idxDf];
                 invokeCB = false;
-                this.prompt([usernamePrompt, passwordPrompt],
-                    (results) => {
-                        getPlatformList(results)
-                        .then(err => {
-                            if (!err) {
-                                fabricAuth = results;
-                                vorpal.delimiter(activeFabric.name + ' >');
-                            }
-                            callback();
-                        });
-                });
+                this.prompt([usernamePrompt, passwordPrompt], (results) => getPlatformList(results, callback, this));
             }
         }
         else {
-            this.log(chalk.red('ERROR! Usage: df connect <name>'));
+            this.log(chalk.red('ERROR! Usage: datafabric connect <name>'));
         }
     }
 
@@ -147,18 +195,71 @@ function processDf(args, callback) {
     }
 }
 
-function getPlatformList(auth) {
-    return axios.get(activeFabric.url + '/api/v1/platform', { auth: auth })
+
+// ------------------------------
+// Functions using the Saagie API
+// ------------------------------
+
+function getPlatformList(auth, callback, ctx) {
+    axios.get(context.fabric.url + '/api/v1/platform', { auth: auth })
         .then(response => {
-            vorpal.log('\nAvailable platforms on ' + chalk.bold(activeFabric.name));
-            response.data.forEach(pf => vorpal.log(chalk.bold(pf.id) + ' - ' + pf.name));
-            //response.headers['set-cookie']
+            ctx.log('\nAvailable platforms on ' + chalk.bold(context.fabric.name));
+            response.data.forEach(pf => ctx.log(chalk.bold(pf.id) + ' - ' + pf.name));
+            ctx.log();
+            
+            context.platforms = response.data;
+            context.auth = auth;
+            vorpal.delimiter(context.fabric.name + ' >');
         })
         .catch(error => {
             vorpal.log(chalk.red('ERROR! Platform list: ' + error));
-            return error;
-        });
+        })
+        .finally(() => callback());
 }
+
+function getJobList(callback, ctx) {
+    axios.get(context.fabric.url + '/api/v1/platform/' + context.platform.id + '/job', { auth: context.auth })
+        .then(response => {
+            ctx.log('\nAvailable jobs on ' + chalk.bold(context.platform.name));
+            response.data.forEach(job => {
+                let status = job.last_state ? job.last_state.lastTaskStatus : 'NEVER_LAUNCHED';
+                if (status === 'SUCCESS') status = chalk.green.bold(status);
+                else if (status === 'NEVER_RUN' || status === 'NEVER_LAUNCHED') status = chalk.gray.bold(status);
+                else if (status === 'PENDING') status = chalk.magenta.bold(status);
+                else if (status === 'FAILED') status = chalk.red.inverse.bold(status);
+                else if (status === 'KILLED') status = chalk.red.bold(status);
+                else status = chalk.cyan.bold(status);
+                ctx.log(chalk.bold(job.id) + ' - ' + job.name + ' - ' + status);
+            });
+            ctx.log();
+            context.jobs = response.data;
+        })
+        .catch(error => {
+            vorpal.log(chalk.red('ERROR! Job list: ' + error));
+        })
+        .finally(() => callback());
+}
+
+function getJobInfo(id, callback, ctx) {
+    axios.get(context.fabric.url + '/api/v1/platform/' + context.platform.id + '/job/' + id, { auth: context.auth })
+        .then(response => {
+            const job = response.data;
+            
+            ctx.log(prettyjson.render(job, {
+                keysColor: 'bold',
+                stringColor: 'white'
+            }));
+        })
+        .catch(error => {
+            vorpal.log(chalk.red('ERROR! Job info: ' + error));
+        })
+        .finally(() => callback());
+}
+
+
+// --------------
+// Misc functions
+// --------------
 
 function saveConfig() {
     fs.writeFile(cliHome + '/config.json', JSON.stringify(config), err => {
@@ -170,6 +271,11 @@ function saveConfig() {
         }
     });
 }
+
+
+// -------------
+// Let's go !!!!
+// -------------
 
 vorpal.log(chalk.inverse.bold('Welcome to Saagie CLI'));
 
