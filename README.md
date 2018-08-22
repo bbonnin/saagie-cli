@@ -14,7 +14,7 @@ npm i -g saagie-cli
 ## Run
 
 ```sh
-$ saagie-cli
+$ saagie
 Welcome to Saagie CLI
 > 
 ```
