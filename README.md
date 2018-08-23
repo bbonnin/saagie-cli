@@ -1,8 +1,6 @@
 # saagie-cli
 CLI tool for Saagie Open DataFabric
 
-> At the moment, there are only read commands!
-
 
 ## Install
 
@@ -72,10 +70,19 @@ datafabric_demo | Dev > job list | grep SUCCESS
 13906 - Demo_plugin - SUCCESS
 
 datafabric_demo | Dev > job info <id>
+
+datafabric_demo | Dev > job run <id>
+
+datafabric_demo | Dev > job stop <id>
+
 ```
 
 
 ## TODO
 
+* Job list: new parameters (status ? type ?)
 * Group jobs by type
 * Sort job list by name, by any other field
+* Create/upgrade/delete a job
+* Logs of a job
+* API Ressources ?

@@ -65,7 +65,7 @@ vorpal
 vorpal
     .command('job <action> [parameters...]')
     .alias('j')
-    .autocomplete(['list', 'info'])
+    .autocomplete(['list', 'info', 'run', 'stop'])
     .action(processJobs);
 
 vorpal
@@ -83,6 +83,12 @@ vorpal
 // Processing actions
 // ------------------
 
+const jobFunctions = {
+    run: runJob,
+    stop: stopJob,
+    info: getJobInfo
+};
+
 function processJobs(args, callback) {
     let invokeCB = true;
     args = _.merge({ parameters: [] }, args);
@@ -94,13 +100,14 @@ function processJobs(args, callback) {
         invokeCB = false;
         getJobList(callback, this);
     }
-    else if (args.action === 'info') {
+    else if (jobFunctions[args.action]) {
+        const fct = jobFunctions[args.action];
         if (args.parameters.length === 1) {
             invokeCB = false;
-            getJobInfo(args.parameters[0], callback, this);
+            fct(args.parameters[0], callback, this);
         }
         else {
-            this.log(chalk.red('ERROR! Usage: job info <id>'));
+            this.log(chalk.red('ERROR! Usage: job ' + args.action + ' <id>'));
         }
     }
 
@@ -200,8 +207,12 @@ function processDatafabrics(args, callback) {
 // Functions using the Saagie API
 // ------------------------------
 
+function getPlatformUrl() {
+    return context.fabric.url + '/api/v1/platform';
+}
+
 function getPlatformList(auth, callback, ctx) {
-    axios.get(context.fabric.url + '/api/v1/platform', { auth: auth })
+    axios.get(getPlatformUrl(), { auth: auth })
         .then(response => {
             ctx.log('\nAvailable platforms on ' + chalk.bold(context.fabric.name));
             response.data.forEach(pf => ctx.log(chalk.bold(pf.id) + ' - ' + pf.name));
@@ -218,7 +229,7 @@ function getPlatformList(auth, callback, ctx) {
 }
 
 function getJobList(callback, ctx) {
-    axios.get(context.fabric.url + '/api/v1/platform/' + context.platform.id + '/job', { auth: context.auth })
+    axios.get(getPlatformUrl() + '/' + context.platform.id + '/job', { auth: context.auth })
         .then(response => {
             ctx.log('\nAvailable jobs on ' + chalk.bold(context.platform.name));
             response.data.forEach(job => {
@@ -241,7 +252,7 @@ function getJobList(callback, ctx) {
 }
 
 function getJobInfo(id, callback, ctx) {
-    axios.get(context.fabric.url + '/api/v1/platform/' + context.platform.id + '/job/' + id, { auth: context.auth })
+    axios.get(getPlatformUrl() + '/' + context.platform.id + '/job/' + id, { auth: context.auth })
         .then(response => {
             const job = response.data;
             
@@ -252,6 +263,28 @@ function getJobInfo(id, callback, ctx) {
         })
         .catch(error => {
             vorpal.log(chalk.red('ERROR! Job info: ' + error));
+        })
+        .finally(() => callback());
+}
+
+function runJob(id, callback, ctx) {
+    axios.post(getPlatformUrl() + '/' + context.platform.id + '/job/' + id + '/run', null, { auth: context.auth })
+        .then(response => {
+            vorpal.log(chalk.green('OK, job launched!'));
+        })
+        .catch(error => {
+            vorpal.log(chalk.red('ERROR! Run job: ' + error));
+        })
+        .finally(() => callback());
+}
+
+function stopJob(id, callback, ctx) {
+    axios.post(getPlatformUrl() + '/' + context.platform.id + '/job/' + id + '/stop', null, { auth: context.auth })
+        .then(response => {
+            vorpal.log(chalk.green('OK, job stopped!'));
+        })
+        .catch(error => {
+            vorpal.log(chalk.red('ERROR! Stop job: ' + error));
         })
         .finally(() => callback());
 }
