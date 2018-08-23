@@ -5,6 +5,9 @@ const fs = require('fs');
 const chalk = require('chalk');
 const prettyjson = require('prettyjson');
 const axios = require('axios');
+const url = require('url') ;
+const clui = require('clui');
+const filesize = require('filesize');
 const _ = require('lodash');
 
 
@@ -42,7 +45,6 @@ let config = { datafabrics: [] };
 if (fs.existsSync(cliHome + '/config.json')) {
     const content = fs.readFileSync(cliHome + '/config.json');
     config = _.merge(config, JSON.parse(content));
-
 }
 
 
@@ -67,6 +69,12 @@ vorpal
     .alias('j')
     .autocomplete(['list', 'info', 'run', 'stop'])
     .action(processJobs);
+
+vorpal
+    .command('operation <action> [parameters...]')
+    .alias('o')
+    .autocomplete(['stats'])
+    .action(processOperations);
 
 vorpal
   .command('grep [filter] [words...]')
@@ -125,7 +133,7 @@ function processPlatforms(args, callback) {
     }
     else if (args.action === 'list') {
         invokeCB = false;
-        getPlatformList(context.auth, callback, this);
+        getPlatformList(callback, this);
     }
     else if (args.action === 'connect') {
         if (args.parameters.length === 1) {
@@ -163,7 +171,7 @@ function processDatafabrics(args, callback) {
     }
     else if (args.action === 'add') {
         if (args.parameters.length === 2) {
-            const pf = { name: args.parameters[0], url: args.parameters[1] };
+            const pf = { name: args.parameters[0], url: args.parameters[1], api: args.parameters[1] + '/api/v1/platform' };
             config.datafabrics.push(pf);
             saveConfig();
         }
@@ -189,12 +197,33 @@ function processDatafabrics(args, callback) {
             else {
                 context.fabric = config.datafabrics[idxDf];
                 invokeCB = false;
-                this.prompt([usernamePrompt, passwordPrompt], (results) => getPlatformList(results, callback, this));
+                this.prompt([usernamePrompt, passwordPrompt], (results) => authenticate(results, callback, this));
             }
         }
         else {
             this.log(chalk.red('ERROR! Usage: datafabric connect <name>'));
         }
+    }
+
+    if (invokeCB) {
+        callback();
+    }
+}
+
+function processOperations(args, callback) {
+
+    //this.log(chalk.red('Not supported'));
+    //callback();
+
+    let invokeCB = true;
+    args = _.merge({ parameters: [] }, args);
+
+    if (!context.fabric) {
+        this.log(chalk.red('ERROR! You are not connected to a data fabric'));
+    }
+    else if (args.action === 'stats') {
+        invokeCB = false;
+        getStats(callback, this);
     }
 
     if (invokeCB) {
@@ -208,24 +237,81 @@ function processDatafabrics(args, callback) {
 // ------------------------------
 
 function getPlatformUrl() {
-    return context.fabric.url + '/api/v1/platform';
+    return context.fabric.url + '/api/v1/platform'
 }
 
-function getPlatformList(auth, callback, ctx) {
-    axios.get(getPlatformUrl(), { auth: auth })
+function bytesToHumanReadable(size) {
+    var i = Math.floor( Math.log(size) / Math.log(1024) );
+    return ( size / Math.pow(1024, i) ).toFixed(2) * 1 + ' ' + ['B', 'kB', 'MB', 'GB', 'TB'][i];
+}
+
+function getStats(callback, ctx) {
+    let origin = url.parse(context.fabric.url);
+    origin = origin.protocol + '//' + origin.host;
+    axios.get(origin + '/operations/api/stats', 
+        { 
+            auth: context.auth,
+            headers: {
+                'Cookie': context.cookie,
+                'Saagie-Realm': 'saagie'
+            }
+        })
         .then(response => {
-            ctx.log('\nAvailable platforms on ' + chalk.bold(context.fabric.name));
-            response.data.forEach(pf => ctx.log(chalk.bold(pf.id) + ' - ' + pf.name));
-            ctx.log();
-            
-            context.platforms = response.data;
+            response.data.platforms.forEach(pf => {
+                const platform = _.findLast(context.platforms, p => p.id == pf.id);
+                ctx.log(chalk.bold('\nPlatform: ' + (platform ? platform.name : pf.id)));
+
+                _.keys(pf.stats).forEach(nodeType => {
+                    const used = pf.stats[nodeType].used;
+                    const total = pf.stats[nodeType].total;
+                    ctx.log(chalk.bold(nodeType) + ': ' + pf.stats[nodeType].size + ' node(s)');
+
+                    let human = used.cpu.toFixed(2) + ' CPU / ' + total.cpu + ' CPU';
+                    ctx.log('\tCPU:\t' + clui.Gauge(used.cpu, total.cpu, 20, total.cpu * 0.8, human));
+
+                    human = filesize(used.disk * 1000 * 1000, {base: 10}) + ' / ' + filesize(total.disk * 1000 * 1000, {base: 10});
+                    ctx.log('\tDisk:\t' + clui.Gauge(used.disk, total.disk, 20, total.disk * 0.8, human));
+
+                    human = filesize(used.ram * 1000 * 1000, {base: 10}) + ' / ' + filesize(total.ram * 1000 * 1000, {base: 10});
+                    ctx.log('\tRAM:\t' + clui.Gauge(used.ram, total.ram, 20, total.ram * 0.8, human));
+                })
+            });
+        })
+        .catch(error => {
+            vorpal.log(chalk.red('ERROR! Operation stats: ' + error));
+        })
+        .finally(() => callback());
+}
+
+function authenticate(auth, callback, ctx) {
+    axios.get(context.fabric.url + '/api/auth', { auth: auth })
+        .then(response => {
             context.auth = auth;
+            context.cookie = response.headers['set-cookie'];
             vorpal.delimiter(context.fabric.name + ' >');
+            getPlatformList(null, null);
+        })
+        .catch(error => {
+            vorpal.log(chalk.red('ERROR! Authenticate: ' + error));
+        })
+        .finally(() => callback());
+}
+
+function getPlatformList(callback, ctx) {
+    axios.get(getPlatformUrl(), { auth: context.auth })
+        .then(response => {
+            context.platforms = response.data;
+
+            if (ctx) {
+                ctx.log('\nAvailable platforms on ' + chalk.bold(context.fabric.name));
+                response.data.forEach(pf => ctx.log(chalk.bold(pf.id) + ' - ' + pf.name));
+                ctx.log();
+            }
         })
         .catch(error => {
             vorpal.log(chalk.red('ERROR! Platform list: ' + error));
         })
-        .finally(() => callback());
+        .finally(() => { if (callback) callback() });
 }
 
 function getJobList(callback, ctx) {

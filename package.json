@@ -18,6 +18,8 @@
   "homepage": "https://github.com/bbonnin/saagie-cli#readme",
   "dependencies": {
     "axios": "^0.18.0",
+    "clui": "^0.3.6",
+    "filesize": "^3.6.1",
     "lodash": "^4.17.10",
     "prettyjson": "^1.2.1",
     "vorpal": "^1.12.0"

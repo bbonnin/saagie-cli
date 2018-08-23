@@ -28,6 +28,8 @@ datafabric_test (https://test_saagie.example.com)
 
 > datafabric add <name> <url>
 
+# For data fabric v2: use a url such as https://host/data-fabric
+
 > datafabric remove <name>
 
 > datafabric connect <name>
@@ -77,6 +79,13 @@ datafabric_demo | Dev > job stop <id>
 
 ```
 
+* operation (alias: o)
+```sh
+datafabric_demo > operation stats
+```
+![stats](/docs/stats.png)
+
+
 
 ## TODO
 
@@ -85,4 +94,3 @@ datafabric_demo | Dev > job stop <id>
 * Sort job list by name, by any other field
 * Create/upgrade/delete a job
 * Logs of a job
-* API Ressources ?
